@@ -1,0 +1,6 @@
+contract,priority,overrun_days,driving_activity,last_week,planned_week,reason,locations
+C002,2,7,A008,27,26,contention at its locations pushed weeks later,"SEC:BET:S17_S18:EB, PLAT:BET:S17:EB, PLAT:BET:S18:EB"
+C006,3,14,A036,28,26,workload exceeds weeks available before planned date,"SEC:BET:S14_H01:EB, PLAT:BET:S14:EB, PLAT:BET:H01:EB"
+C001,3,7,A001,24,23,contention at its locations pushed weeks later,"SEC:BET:S15_S16:EB, SEC:BET:S16_S17:EB, PLAT:BET:S16:EB"
+C010,3,7,A059,20,19,workload exceeds weeks available before planned date,"SEC:ALP:S06_S07:WB, SEC:ALP:S07_S08:WB, PLAT:ALP:S07:WB"
+C014,3,7,A075,29,28,contention at its locations pushed weeks later,"SEC:BET:H01_H02:WB, PLAT:BET:H01:WB, PLAT:BET:H02:WB"

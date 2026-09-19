@@ -1,0 +1,4 @@
+scenario,feasible,violations,overrun_days_total,excess_access_nights_total,eclo_nights_total,priority_weighted_score,objective
+A,True,0,42,0,0,131.6,131.6
+B,True,0,0,0,10,0.0,50.0
+C,True,0,21,0,4,24.5,44.5
