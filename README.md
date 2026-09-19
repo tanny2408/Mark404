@@ -1,32 +1,106 @@
 # Railway Track Access Optimiser
 
-A decision-support tool for railway possession scheduling, developed for the **NebulaX Hackathon – PS1: Railway Track Access Optimisation**.
+A railway possession scheduling and decision-support application developed for the **NebulaX Hackathon – PS1: Railway Track Access Optimisation**.
 
-The application reads the eight PS1 input CSV files, builds a railway scheduling model, solves Scenarios **A, B and C** with **Google OR-Tools CP-SAT**, validates the generated schedule, and exports the required submission files.
+The project uses **Google OR-Tools CP-SAT** to generate feasible railway access schedules for Scenarios **A, B and C**, validates the generated schedule, visualises the result in an interactive Streamlit dashboard, and exports the required submission CSV files.
 
-A Streamlit interface is included for interactive optimisation, diagnostics, downloads, and what-if replanning.
+---
+
+## Overview
+
+The optimiser schedules railway activities across the planning horizon while considering constraints such as:
+
+- planned activity start dates
+- predecessor relationships
+- required workload / access nights
+- contract workfront limits
+- maximum weekly accesses
+- railway location capacity
+- possession types (`PM`, `PC`, `C`)
+- co-sharing rules
+- safety closures and buffers
+- ECLO usage
+- contract priorities
+- planned completion dates
+
+The main optimisation engine is implemented in:
+
+```text
+PS1/Scheduler/trackaccess.py
+```
+
+The web interface is implemented in:
+
+```text
+PS1/Scheduler/streamlit_app.py
+```
 
 ---
 
 ## Features
 
-- Reads all 8 PS1 input files
-- Builds activity routes, occupied locations, buffers, dependencies, capacities and contract rules
-- Solves railway access scheduling with **OR-Tools CP-SAT**
-- Supports all three scenarios:
-  - **Scenario A** – capacity is hard, delay is allowed
-  - **Scenario B** – planned completion dates are hard, ECLO/capacity flexibility is allowed
-  - **Scenario C** – balanced optimisation
-- Handles workload, planned starts, predecessors, capacity, workfronts, weekly access limits, PM/PC/C rules, co-sharing, ECLO and safety buffers
-- Generates:
-  - `SCHEDULE_ACCESS.csv`
-  - `SCHEDULE_OCCUPANCY.csv`
-  - `RESULTS.csv`
-- Produces validation and diagnostic reports
-- Supports capacity-based what-if replanning
-- Penalises unnecessary schedule churn during replanning
-- Includes a Streamlit web UI
-- Can be deployed to **Google Cloud Run**
+### Optimisation
+
+- Solves **Scenario A**
+- Solves **Scenario B**
+- Solves **Scenario C**
+- Uses **OR-Tools CP-SAT**
+- Automatically extends the planning horizon when required
+- Supports priority-weighted delay penalties
+- Supports ECLO decisions
+- Supports location capacity constraints
+- Supports contract workfront and weekly access constraints
+- Supports predecessor constraints
+- Generates railway occupancy and co-sharing groups
+
+### Validation
+
+The application runs the built-in validation logic after each solve and reports:
+
+- feasibility
+- hard constraint violations
+- total overrun days
+- excess access nights
+- ECLO nights
+- priority-weighted score
+- capacity hotspots
+
+### Visualisation
+
+The Streamlit dashboard includes:
+
+- **Activity schedule timeline**
+  - activities on the Y-axis
+  - calendar time on the X-axis
+  - colour-coded contract priorities
+  - planned completion markers
+  - ECLO highlighting
+  - overrun highlighting
+
+- **Capacity heatmap**
+  - location × week
+  - capacity usage based on possession / `co_share_group` count
+
+- **Contract performance chart**
+  - contract overrun days
+
+- interactive Plotly hover, zoom and pan
+
+### Submission Output
+
+The application generates the three required output files:
+
+```text
+SCHEDULE_ACCESS.csv
+SCHEDULE_OCCUPANCY.csv
+RESULTS.csv
+```
+
+It also provides a downloadable diagnostic report:
+
+```text
+REPORT.json
+```
 
 ---
 
@@ -41,16 +115,17 @@ Mark404/
     ├── 01_data/
     ├── 02_references/
     ├── 03_submission_sample/
+    ├── PS1_README.md
     └── Scheduler/
         ├── streamlit_app.py
-        └── trackaccess_corrected.py
+        └── trackaccess.py
 ```
 
 ---
 
 ## Input Files
 
-The optimiser expects these eight CSV files:
+The optimiser expects the eight PS1 input files:
 
 ```text
 01_LINES.csv
@@ -63,19 +138,33 @@ The optimiser expects these eight CSV files:
 08_ACTIVITY_DETAILS.csv
 ```
 
-The Streamlit app allows users to upload these files directly.
+The Streamlit application supports two input modes:
+
+### Bundled Dataset
+
+If the Docker image or local repository contains:
+
+```text
+PS1/01_data/
+```
+
+the dashboard can load the bundled dataset directly.
+
+### Uploaded Dataset
+
+Users can also upload all eight CSV files through the Streamlit interface.
+
+This is useful for testing alternative or hidden instances without rebuilding the application.
 
 ---
 
 ## Output Files
 
-For each scenario, the optimiser produces:
-
 ### `SCHEDULE_ACCESS.csv`
 
-Defines when each activity receives access.
+Describes when each activity is scheduled.
 
-Typical columns:
+Example structure:
 
 ```text
 activity_id
@@ -87,9 +176,9 @@ access_night
 
 ### `SCHEDULE_OCCUPANCY.csv`
 
-Defines the railway resources occupied by each scheduled activity.
+Describes which railway locations are occupied.
 
-Typical columns:
+Example structure:
 
 ```text
 activity_id
@@ -100,9 +189,9 @@ co_share_group
 
 ### `RESULTS.csv`
 
-Contains contract-level completion results.
+Contains contract completion results.
 
-Typical columns:
+Example structure:
 
 ```text
 scenario
@@ -111,104 +200,96 @@ simulated_completion_date
 overrun_days
 ```
 
-The tool can also produce:
-
-```text
-REPORT.json
-EXPLANATION.csv
-SUMMARY.csv
-```
-
 ---
 
 ## Optimisation Model
 
-The core solver uses **Google OR-Tools CP-SAT**.
+The solver uses a time-indexed CP-SAT formulation.
 
-The main scheduling decision is:
-
-```text
-X[a, w] = 1
-```
-
-if activity `a` is scheduled in week `w`.
-
-ECLO is modelled separately:
+For activity `a` and week `w`:
 
 ```text
-E[a, w] = 1
+X[a,w] = 1
 ```
 
-if that access is an ECLO access.
+means activity `a` receives an access in week `w`.
 
-To keep the CP-SAT model integral:
+For ECLO:
 
 ```text
-Standard access = 2 workload units
-ECLO access     = 3 workload units
+E[a,w] = 1
 ```
 
-representing 1.0 and 1.5 units of work respectively.
+means the scheduled access is an ECLO access.
+
+The implementation uses integer workload units:
+
+```text
+Standard access = 2 units
+ECLO access     = 3 units
+```
+
+which represents:
+
+```text
+Standard access = 1.0 workload
+ECLO access     = 1.5 workload
+```
+
+The solver then applies activity, contract, railway capacity, possession and safety constraints before minimising the scenario-specific objective.
 
 ---
 
-## Scenario Objectives
+## Scenarios
 
 ### Scenario A
 
-Capacity is hard and ECLO is not allowed.
-
-```text
-Objective = priority-weighted delay
-```
+- ECLO is disabled
+- railway capacity is treated as a hard constraint
+- delay is allowed
+- objective focuses on priority-weighted delay
 
 ### Scenario B
 
-Planned completion dates are hard.
-
-```text
-Objective =
-7 × excess access nights
-+
-5 × ECLO nights
-```
+- planned completion dates are hard
+- ECLO and permitted capacity flexibility may be used
+- objective penalises additional operational flexibility
 
 ### Scenario C
 
-Balances delay, excess access and ECLO.
+- balances delay, ECLO usage and capacity flexibility
+- applies the configured Scenario C limits and penalties
+
+The exact objective implementation is defined in:
 
 ```text
-Objective =
-priority-weighted delay
-+
-7 × excess access nights
-+
-5 × ECLO nights
+PS1/Scheduler/trackaccess.py
 ```
 
 ---
 
-## Local Installation
+## Requirements
 
-Python 3.11 is recommended.
+Python **3.11** is recommended.
 
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-Example `requirements.txt`:
+The project uses the following Python dependencies:
 
 ```txt
 pandas>=2.0,<3.0
 ortools>=9.10,<10.0
 streamlit>=1.35,<2.0
+plotly>=5.20,<7.0
+```
+
+Install dependencies with:
+
+```bash
+pip install -r requirements.txt
 ```
 
 ---
 
-## Run the Streamlit App
+## Run Locally
 
 From the repository root:
 
@@ -223,111 +304,78 @@ cd PS1/Scheduler
 streamlit run streamlit_app.py
 ```
 
-Then open:
+By default, Streamlit uses:
 
 ```text
 http://localhost:8501
 ```
 
-The UI flow is:
+To explicitly use port `8501`:
 
-```text
-Upload instance
-    ↓
-Review data
-    ↓
-Select Scenario A / B / C
-    ↓
-Run optimiser
-    ↓
-Review feasibility and score
-    ↓
-Inspect access / occupancy / contract results
-    ↓
-Download submission files
-    ↓
-Optional what-if replanning
+```bash
+streamlit run streamlit_app.py --server.port 8501
 ```
 
 ---
 
-## Run the Solver from Python
+## Using `trackaccess.py` Directly
+
+The solver can also be executed directly from Python.
+
+Example:
 
 ```python
-import trackaccess_corrected as engine
+import trackaccess as engine
 
-inst = engine.load_instance("path/to/data")
+inst = engine.load_instance("../01_data")
 
-submission, meta = engine.solve_with_autoextend(
+submission, meta = engine.solve_with_growing_horizon(
     inst,
-    scenario="C",
-    time_limit=180,
+    "C",
+    180,
 )
 
-report = engine.validate(inst, submission)
+if submission is not None:
+    report = engine.validate(inst, submission)
 
-print(meta)
-print(report)
+    print(meta)
+    print(report)
 ```
 
 ---
 
-## Validation
-
-The project includes an internal validator that checks:
-
-- full workload delivery
-- planned start compliance
-- predecessor order
-- weekly access limits
-- workfront limits
-- possession mix legality
-- capacity limits
-- safety closures
-- ECLO rules
-- result consistency
-
-A successful result looks like:
+## Dashboard Workflow
 
 ```text
-feasible = true
-hard_violations = []
+Choose bundled data or upload 8 CSV files
+                    ↓
+             Load instance
+                    ↓
+           Review input summary
+                    ↓
+          Select Scenario A/B/C
+                    ↓
+             Run CP-SAT
+                    ↓
+          Validate the schedule
+                    ↓
+     ┌──────────────┼──────────────┐
+     ↓              ↓              ↓
+ Timeline      Capacity Heatmap   Contract Chart
+     └──────────────┼──────────────┘
+                    ↓
+           Review CSV outputs
+                    ↓
+        Download submission files
 ```
-
-The official PS1 reference validator should still be treated as the final source of truth.
-
----
-
-## Example Results
-
-One tested run produced:
-
-| Scenario | Feasible | Overrun Days | Excess Access Nights | ECLO Nights | Objective |
-|---|---:|---:|---:|---:|---:|
-| A | Yes | 42 | 0 | 0 | 131.6 |
-| B | Yes | 0 | 0 | 10 | 50.0 |
-| C | Yes | 21 | 0 | 4 | 44.5 |
-
-These values depend on the solver configuration and input instance.
-
----
-
-## What-if Replanning
-
-The Streamlit app supports temporary capacity changes, for example:
-
-```text
-SEC:ALP:S02_S03:EB
-capacity 4 → 1
-```
-
-The system then re-optimises the schedule while applying a schedule-churn penalty so that unaffected activities are kept in their original weeks where possible.
 
 ---
 
 ## Docker
 
-Example Dockerfile:
+The Docker image should include the complete `PS1` directory so that the Streamlit application can access the bundled `PS1/01_data` dataset.
+
+Dockerfile:
 
 ```dockerfile
 FROM python:3.11-slim
@@ -343,7 +391,7 @@ COPY requirements.txt ./
 RUN pip install --upgrade pip \
     && pip install -r requirements.txt
 
-COPY PS1/Scheduler ./PS1/Scheduler
+COPY PS1 ./PS1
 
 WORKDIR /app/PS1/Scheduler
 
@@ -356,44 +404,39 @@ CMD ["sh", "-c", "exec streamlit run streamlit_app.py \
     --browser.gatherUsageStats=false"]
 ```
 
-Build:
+Build the image:
 
 ```bash
-docker build -t railway-track-access .
+cd ~/Mark404
+docker build --no-cache -t railway-track-access .
 ```
 
-Run:
+Run locally on port `8501`:
 
 ```bash
-docker run --rm -p 8080:8080 -e PORT=8080 railway-track-access
+docker run --rm \
+  -p 8501:8501 \
+  -e PORT=8501 \
+  railway-track-access
 ```
 
 Then open:
 
 ```text
-http://localhost:8080
+http://localhost:8501
 ```
 
 ---
 
-## Deploy to Google Cloud Run
+## Google Cloud Run Deployment
 
-Set the Google Cloud project:
-
-```bash
-gcloud config set project YOUR_PROJECT_ID
-```
-
-Enable required services:
+From the repository root:
 
 ```bash
-gcloud services enable \
-  run.googleapis.com \
-  cloudbuild.googleapis.com \
-  artifactregistry.googleapis.com
+cd ~/Mark404
 ```
 
-Deploy from the repository root:
+Deploy:
 
 ```bash
 gcloud run deploy railway-track-access \
@@ -406,72 +449,62 @@ gcloud run deploy railway-track-access \
   --max-instances 1
 ```
 
-After deployment, Cloud Run returns a public HTTPS URL.
-
-The application continues running even after Cloud Shell or the Google Cloud Console is closed.
-
 ---
 
 ## Architecture
 
 ```text
-                     ┌─────────────────────┐
-                     │    Streamlit UI     │
-                     └──────────┬──────────┘
-                                │
-                                ▼
-                     ┌─────────────────────┐
-                     │  Optimisation Core  │
-                     │     OR-Tools        │
-                     │      CP-SAT         │
-                     └──────────┬──────────┘
-                                │
-                  ┌─────────────┴─────────────┐
-                  │                           │
-                  ▼                           ▼
-        ┌──────────────────┐       ┌──────────────────┐
-        │ Constraint Logic │       │ Validation Layer │
-        └────────┬─────────┘       └────────┬─────────┘
-                 │                          │
-                 └────────────┬─────────────┘
-                              ▼
-                    ┌──────────────────┐
-                    │   PS1 CSV Data   │
-                    └──────────────────┘
+                        ┌───────────────────────┐
+                        │     Streamlit UI      │
+                        │                       │
+                        │ Upload / Select Data  │
+                        │ Visual Analytics      │
+                        │ CSV Downloads         │
+                        └───────────┬───────────┘
+                                    │
+                                    ▼
+                        ┌───────────────────────┐
+                        │    trackaccess.py     │
+                        │                       │
+                        │    OR-Tools CP-SAT    │
+                        └───────────┬───────────┘
+                                    │
+                   ┌────────────────┴────────────────┐
+                   │                                 │
+                   ▼                                 ▼
+        ┌──────────────────────┐          ┌──────────────────────┐
+        │ Constraint / Safety  │          │      Validator       │
+        │       Logic          │          │                      │
+        └──────────┬───────────┘          └──────────┬───────────┘
+                   │                                 │
+                   └────────────────┬────────────────┘
+                                    │
+                                    ▼
+                        ┌───────────────────────┐
+                        │   Submission Output   │
+                        │                       │
+                        │ SCHEDULE_ACCESS.csv   │
+                        │ SCHEDULE_OCCUPANCY.csv│
+                        │ RESULTS.csv           │
+                        └───────────────────────┘
 ```
-
-The optimisation engine handles feasibility and scheduling deterministically.
-
-Natural-language or AI features can be added as an explanation layer, but should not be responsible for safety-critical scheduling decisions.
 
 ---
 
 ## Technology Stack
 
-- Python 3.11
-- Google OR-Tools CP-SAT
-- pandas
-- Streamlit
-- Docker
-- Google Cloud Run
+- **Python 3.11**
+- **Google OR-Tools CP-SAT**
+- **pandas**
+- **Streamlit**
+- **Plotly**
+- **Docker**
+- **Google Cloud Run**
 
 ---
 
-## Development Notes
+## NebulaX Hackathon
 
-This implementation is a hackathon decision-support prototype.
+Developed for:
 
-Before final submission, schedules should be checked against the official reference validator, especially for interpretation-sensitive rules such as:
-
-- platform occupancy semantics
-- safety buffer expansion
-- interchange behaviour
-- ECLO continuity
-- possession sharing
-- scenario-specific horizon rules
-
----
-
-## Team
-
-Developed for the **NebulaX Hackathon – Railway Track Access Optimisation (PS1)**.
+**NebulaX Hackathon – PS1: Railway Track Access Optimisation**
