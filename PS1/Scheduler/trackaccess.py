@@ -484,11 +484,30 @@ def run_solve(inst, out, scenarios, time_limit):
     os.makedirs(out, exist_ok=True)
     pd.DataFrame(summary).to_csv(os.path.join(out, "SUMMARY.csv"), index=False)
     print(pd.DataFrame(summary).to_string(index=False))
-INSTANCE = load_instance(DATA_DIR)
-print(f"instance: {INSTANCE['path']}")
-if MODE == "info":
-    run_info(INSTANCE)
-elif MODE == "validate":
-    print(json.dumps(validate(INSTANCE, read_submission(VALIDATE_DIR)), indent=2, default=str))
-else:
-    run_solve(INSTANCE, OUT_DIR, SCENARIOS, TIME_LIMIT)
+
+if __name__ == "__main__":
+    INSTANCE = load_instance(DATA_DIR)
+    print(f"instance: {INSTANCE['path']}")
+
+    if MODE == "info":
+        run_info(INSTANCE)
+
+    elif MODE == "validate":
+        print(
+            json.dumps(
+                validate(
+                    INSTANCE,
+                    read_submission(VALIDATE_DIR)
+                ),
+                indent=2,
+                default=str,
+            )
+        )
+
+    else:
+        run_solve(
+            INSTANCE,
+            OUT_DIR,
+            SCENARIOS,
+            TIME_LIMIT,
+        )
